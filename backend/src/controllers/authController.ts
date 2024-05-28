@@ -1,8 +1,11 @@
 import { Request, Response } from "express";
+import { check, cookie, oneOf, validationResult } from "express-validator";
+import sql from "../db";
 import axios from "axios";
 const asyncHandler = require("express-async-handler");
 const queryString = require("query-string");
 const jwt = require("jsonwebtoken");
+
 const {
 	SERVER_URL,
 	CLIENT_URL,
@@ -11,7 +14,6 @@ const {
 	PRIVATE_KEY,
 } = process.env;
 const redirectUrl = "/auth/google";
-
 const getGoogleAuthURL: () => string = () => {
 	const rootUrl = "https://accounts.google.com/o/oauth2/auth";
 
@@ -29,7 +31,7 @@ const getGoogleAuthURL: () => string = () => {
 
 	return `${rootUrl}?${queryString.stringify(options)}`;
 };
-
+console.log(getGoogleAuthURL());
 const getTokens = async ({
 	code,
 	clientId,
@@ -85,5 +87,49 @@ exports.googleAuth_GET = asyncHandler(async (req: Request, res: Response) => {
 
 	const googleUser = response.data;
 	const token = jwt.sign(googleUser, PRIVATE_KEY, { expiresIn: "2 day" });
-	return res.cookie("google-token", token).sendStatus(202);
+	const checkDB =
+		await sql`select 1 from users where external_id = ${googleUser.id}`;
+	if (!checkDB.count) {
+		await sql`insert into Users ${sql({
+			username: googleUser.name,
+			role: "guest",
+			created: Date.now(),
+			avatar: googleUser.picture,
+			external_type: "google",
+			external_id: googleUser.id,
+		})}`;
+	}
+
+	return res.cookie("google_token", token).sendStatus(202);
 });
+
+exports.checkLogin_GET = [
+	oneOf([cookie("google_token").exists(), cookie("token").exists()], {
+		message: "User is not logged in",
+	}),
+	asyncHandler(async (req: Request, res: Response) => {
+		const result = validationResult(req);
+
+		if (!result.isEmpty()) {
+			return res.status(401).json(result.array({ onlyFirstError: true }));
+		}
+		const {
+			google_token,
+			token,
+		}: { google_token: string | undefined; token: string | undefined } =
+			req.cookies;
+
+		if (google_token) {
+			try {
+				const googleData = jwt.verify(google_token, PRIVATE_KEY);
+				const dbResponse =
+					await sql`select username, role, avatar from Users where external_id = ${googleData.id}`;
+				return res.status(200).json(dbResponse[0]);
+			} catch (err) {
+				return res.sendStatus(401);
+			}
+		} else if (token) {
+			return res.sendStatus(200);
+		}
+	}),
+];
