@@ -1,11 +1,13 @@
+import {
+	body,
+	check,
+	cookie,
+	oneOf,
+	validationResult,
+} from "express-validator";
 import { Request, Response } from "express";
-import { check, cookie, oneOf, validationResult } from "express-validator";
 import sql from "../db";
 import axios from "axios";
-const asyncHandler = require("express-async-handler");
-const queryString = require("query-string");
-const jwt = require("jsonwebtoken");
-
 const {
 	SERVER_URL,
 	CLIENT_URL,
@@ -13,7 +15,13 @@ const {
 	GOOGLE_CLIENT_SECRET,
 	PRIVATE_KEY,
 } = process.env;
+const bcrypt = require("bcrypt");
+const asyncHandler = require("express-async-handler");
+const queryString = require("query-string");
+const jwt = require("jsonwebtoken");
+const saltRounds = 10;
 const redirectUrl = "/auth/google";
+
 const getGoogleAuthURL: () => string = () => {
 	const rootUrl = "https://accounts.google.com/o/oauth2/auth";
 
@@ -113,10 +121,7 @@ exports.checkLogin_GET = [
 		if (!result.isEmpty()) {
 			return res.status(401).json(result.array({ onlyFirstError: true }));
 		}
-		const {
-			google_token,
-			token,
-		}: { google_token: string | undefined; token: string | undefined } =
+		const { google_token, token }: { google_token: string; token: string } =
 			req.cookies;
 
 		if (google_token) {
@@ -130,6 +135,103 @@ exports.checkLogin_GET = [
 			}
 		} else if (token) {
 			return res.sendStatus(200);
+		}
+	}),
+];
+
+exports.localSignup_POST = [
+	body("username")
+		.escape()
+		.custom(async (v) => {
+			const dbCheck = await sql`select 1 from Users where username = ${v}`;
+			if (dbCheck.count) {
+				throw new Error("This username already exists.");
+			} else {
+				return true;
+			}
+		})
+		.isLength({ min: 4, max: 13 })
+		.withMessage("Invalid length")
+		.matches(/^[a-zA-Z0-9_-]+$/)
+		.withMessage("Invalid character(s)"),
+	body("password")
+		.escape()
+		.isLength({ min: 6, max: 15 })
+		.withMessage("Invalid length")
+		.matches(/^[a-zA-Z0-9_-]+$/)
+		.withMessage("Invalid character(s)"),
+	asyncHandler(async (req: Request, res: Response) => {
+		const result = validationResult(req);
+		const { username, password } = req.body;
+		if (!result.isEmpty()) {
+			return res.status(401).json(result.array());
+		}
+		const encryptedPassword = await bcrypt.hash(password, saltRounds);
+		const response = await sql`insert into Users ${sql({
+			username: username,
+			password: encryptedPassword,
+			role: "guest",
+			avatar: "default",
+			external_type: "native",
+			created: Date.now(),
+		})} returning id, username, created`;
+
+		const token = jwt.sign(response[0], PRIVATE_KEY, { expiresIn: "2 day" });
+		return res
+			.cookie("token", token, {
+				httpOnly: true,
+				secure: true,
+			})
+			.sendStatus(202);
+	}),
+];
+
+exports.localLogin_POST = [
+	body("username")
+		.escape()
+		.custom(async (v) => {
+			const dbCheck = await sql`select 1 from Users where username = ${v}`;
+			if (!dbCheck.count) {
+				throw new Error("This username does not exist.");
+			} else {
+				return true;
+			}
+		})
+		.isLength({ min: 4, max: 13 })
+		.withMessage("Invalid length")
+		.matches(/^[a-zA-Z0-9_-]+$/)
+		.withMessage("Invalid character(s)"),
+	body("password")
+		.escape()
+		.isLength({ min: 6, max: 15 })
+		.withMessage("Invalid length")
+		.matches(/^[a-zA-Z0-9_-]+$/)
+		.withMessage("Invalid character(s)"),
+	asyncHandler(async (req: Request, res: Response) => {
+		const result = validationResult(req);
+
+		if (!result.isEmpty()) {
+			return res.status(401).json(result.array());
+		}
+
+		const { username, password } = req.body;
+		const dbResponse =
+			await sql`select password from Users where username = ${username}`;
+		const encryptedPassword = dbResponse[0].password;
+		const hashResult = await bcrypt.compare(password, encryptedPassword);
+		if (hashResult) {
+			const response =
+				await sql`select id, username, created from Users where username = ${username}`;
+			const token = jwt.sign(response[0], PRIVATE_KEY, { expiresIn: "2 day" });
+			console.log(token);
+			return res
+				.cookie("token", token, {
+					httpOnly: true,
+					secure: true,
+				})
+				.sendStatus(202);
+		} else {
+			return res.status(401).send("Wrong password");
 		}
 	}),
 ];
