@@ -1,14 +1,9 @@
-import { body, cookie, oneOf, validationResult } from "express-validator";
+import { body, cookie, validationResult } from "express-validator";
 import { Request, Response } from "express";
 import sql from "../db";
 import axios from "axios";
-const {
-	SERVER_URL,
-	CLIENT_URL,
-	GOOGLE_CLIENT_ID,
-	GOOGLE_CLIENT_SECRET,
-	PRIVATE_KEY,
-} = process.env;
+const { SERVER_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, PRIVATE_KEY } =
+	process.env;
 const bcrypt = require("bcrypt");
 const asyncHandler = require("express-async-handler");
 const queryString = require("query-string");

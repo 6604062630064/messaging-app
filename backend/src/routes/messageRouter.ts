@@ -4,7 +4,5 @@ const router = express.Router();
 
 router.get("/", messageController.message_GET);
 
-router.post("/", (req: Request, res: Response) => {
-	res.send("To be implemented");
-});
+router.post("/", messageController.message_POST);
 module.exports = router;
