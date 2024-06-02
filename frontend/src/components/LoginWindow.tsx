@@ -36,7 +36,6 @@ export default function LoginWindow({
 	const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		setIsLoading(true);
-		console.log("test");
 		const formData = new FormData(e.currentTarget);
 		const urlSearchParams = new URLSearchParams(formData as any);
 		const response = await fetch(`${process.env.SERVER_URL}/auth/login`, {

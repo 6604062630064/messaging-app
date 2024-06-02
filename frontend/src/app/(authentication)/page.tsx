@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
 	Card,
 	CardDescription,
@@ -8,12 +8,12 @@ import {
 	CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import LoginWindow from "../LoginWindow";
-import SignupWindow from "../SignupWindow";
-export default function LoginPage() {
+import LoginWindow from "@/components/LoginWindow";
+import SignupWindow from "@/components/SignupWindow";
+
+export default function Home() {
 	const [isLoading, setIsLoading] = useState<boolean>(false);
 	const [isLoginWindow, setIsLoginWindow] = useState<boolean>(true);
-
 	return (
 		<div className="flex justify-center">
 			<Card className="mt-48 max-w-[450px] w-full ">

@@ -85,7 +85,7 @@ exports.googleAuth_GET = asyncHandler(async (req: Request, res: Response) => {
 
 	const googleUser = response.data;
 	let checkDB =
-		await sql`select 1 from users where external_id = ${googleUser.id} returning id, username, created `;
+		await sql`select id, username, created from Users where external_id = ${googleUser.id}`;
 	if (!checkDB.count) {
 		checkDB = await sql`insert into Users ${sql({
 			username: googleUser.name,
@@ -97,7 +97,7 @@ exports.googleAuth_GET = asyncHandler(async (req: Request, res: Response) => {
 		})} returning id, username, created`;
 	}
 
-	const token = jwt.sign(checkDB, PRIVATE_KEY, { expiresIn: "2 day" });
+	const token = jwt.sign(checkDB[0], PRIVATE_KEY, { expiresIn: "2 day" });
 
 	return res
 		.cookie("token", token)
