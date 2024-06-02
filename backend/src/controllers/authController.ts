@@ -1,10 +1,4 @@
-import {
-	body,
-	check,
-	cookie,
-	oneOf,
-	validationResult,
-} from "express-validator";
+import { body, cookie, oneOf, validationResult } from "express-validator";
 import { Request, Response } from "express";
 import sql from "../db";
 import axios from "axios";
@@ -31,6 +25,7 @@ const getGoogleAuthURL: () => string = () => {
 		response_type: `code`,
 		access_type: `offline`,
 		prompt: "select_account",
+		ux_mode: "popup",
 		scope: [
 			"https://www.googleapis.com/auth/userinfo.email",
 			"https://www.googleapis.com/auth/userinfo.profile",
@@ -94,47 +89,45 @@ exports.googleAuth_GET = asyncHandler(async (req: Request, res: Response) => {
 	);
 
 	const googleUser = response.data;
-	const token = jwt.sign(googleUser, PRIVATE_KEY, { expiresIn: "2 day" });
-	const checkDB =
-		await sql`select 1 from users where external_id = ${googleUser.id}`;
+	let checkDB =
+		await sql`select 1 from users where external_id = ${googleUser.id} returning id, username, created `;
 	if (!checkDB.count) {
-		await sql`insert into Users ${sql({
+		checkDB = await sql`insert into Users ${sql({
 			username: googleUser.name,
 			role: "guest",
 			created: Date.now(),
 			avatar: googleUser.picture,
 			external_type: "google",
 			external_id: googleUser.id,
-		})}`;
+		})} returning id, username, created`;
 	}
 
-	return res.cookie("google_token", token).sendStatus(202);
+	const token = jwt.sign(checkDB, PRIVATE_KEY, { expiresIn: "2 day" });
+
+	return res
+		.cookie("token", token)
+		.status(202)
+		.send(`<script>window.close();</script> `);
 });
 
 exports.checkLogin_GET = [
-	oneOf([cookie("google_token").exists(), cookie("token").exists()], {
-		message: "User is not logged in",
-	}),
+	cookie("token").exists(),
 	asyncHandler(async (req: Request, res: Response) => {
 		const result = validationResult(req);
 
 		if (!result.isEmpty()) {
 			return res.status(401).json(result.array({ onlyFirstError: true }));
 		}
-		const { google_token, token }: { google_token: string; token: string } =
-			req.cookies;
 
-		if (google_token) {
-			try {
-				const googleData = jwt.verify(google_token, PRIVATE_KEY);
-				const dbResponse =
-					await sql`select username, role, avatar from Users where external_id = ${googleData.id}`;
-				return res.status(200).json(dbResponse[0]);
-			} catch (err) {
-				return res.sendStatus(401);
-			}
-		} else if (token) {
-			return res.sendStatus(200);
+		const token = req.cookies.token;
+
+		try {
+			const data = jwt.verify(token, PRIVATE_KEY);
+			const dbResponse =
+				await sql`select username, role, avatar from Users where id = ${data.id}`;
+			return res.status(200).json(dbResponse[0]);
+		} catch (err) {
+			return res.sendStatus(401);
 		}
 	}),
 ];
@@ -156,7 +149,7 @@ exports.localSignup_POST = [
 		.withMessage("Invalid character(s)"),
 	body("password")
 		.escape()
-		.isLength({ min: 6, max: 15 })
+		.isLength({ min: 6, max: 32 })
 		.withMessage("Invalid length")
 		.matches(/^[a-zA-Z0-9_-]+$/)
 		.withMessage("Invalid character(s)"),
@@ -231,7 +224,11 @@ exports.localLogin_POST = [
 				})
 				.sendStatus(202);
 		} else {
-			return res.status(401).send("Wrong password");
+			return res.status(401).send({ error: "Wrong password" });
 		}
 	}),
 ];
+
+exports.logout_GET = asyncHandler((req: Request, res: Response) => {
+	res.clearCookie("token").sendStatus(200);
+});
