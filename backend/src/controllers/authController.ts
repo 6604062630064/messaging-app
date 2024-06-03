@@ -118,6 +118,7 @@ exports.checkLogin_GET = [
 
 		try {
 			const data = jwt.verify(token, PRIVATE_KEY);
+			console.log(data);
 			const dbResponse =
 				await sql`select username, role, avatar from Users where id = ${data.id}`;
 			return res.status(200).json(dbResponse[0]);
